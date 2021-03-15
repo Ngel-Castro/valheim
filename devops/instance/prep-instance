@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# This script will be used to build image and start docker image.
+# Author Angel Castro Basurto - castrobasurto.angel@gmail.com
+
+#set -xe
+
+
+sudo yum update -y
+sudo yum install docker git -y
+sudo service docker start
+sudo usermod -a -G docker ec2-user
+ssh-keygen -t rsa -b 4096 -C "youremail@address.com" -f $HOME/.ssh/valheimserver-key -P ""
+touch $HOME/.ssh/config && chmod 600 $HOME/.ssh/config
+echo "Host bitbucket.org" >> $HOME/.ssh/config
+echo "   IdentityFile $HOME/.ssh/valheimserver-key" >> $HOME/.ssh/config
+cat $HOME/.ssh/valheimserver-key.pub

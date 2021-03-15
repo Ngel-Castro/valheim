@@ -1,0 +1,3 @@
+#!/bin/bash
+
+# This script should be use to start-up ec2 instance docker image at the time of execution.

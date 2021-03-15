@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# This script will be use for backup/restore process.
+# Author Angel Castro Basurto
+#set -xe
+
+
+usage () {
+    cat << EOF 
+    Usage: $0 -o {restore|backup}  -b {bucket name} -d {worlds destination} -w {worldName}
+    ex: $0 -o restore -b mybucketname -d /home/${USER}/valheim-worlds -w genesis
+    ex: $0 -o backup -b mybucketname -d /home/${USER}/valheim-worlds -w genesis
+    
+EOF
+    exit 1
+}
+
+timestamp() {
+  date +"%Y-%m-%d_%H-%M-%S" # current time
+}
+
+createDir(){
+    local directory=$1
+    if [[ ! -d $directory ]]; then
+      mkdir ${directory}
+    else
+      echo "ERROR: $directory exists, please delete folder manually"
+      exit 50
+    fi
+}
+
+createTag(){
+    local worldName=$1
+    local timestamp=$2
+
+    echo ${worldName}-${timestamp} > ${worldName}.latest
+    aws s3 cp ./${worldName}.latest s3://${s3BucketName}/backup/${worldName}.latest
+    rm -f ${worldName}.latest
+}
+
+restore(){
+    local worldName=${WORLD_NAME}
+    local s3BucketName=${S3BUCKET}
+    local destination=${DIR}
+
+    createDir ${destination}
+
+    cd ${destination}
+    echo "INFO: Getting restore file"
+    aws s3 cp s3://${s3BucketName}/backup/${worldName}.latest ./
+    backupFile=$(cat ./${worldName}.latest)
+    aws s3 cp s3://${s3BucketName}/backup/${backupFile} ${destination}
+    tar -xvf ./${backupFile}
+    echo "INFO: cleaning up tar ball"
+    rm -f ./${backupFile}
+
+}
+
+backup(){
+    local worldName=${WORLD_NAME}
+    local s3BucketName=${S3BUCKET}
+    local source=${DIR}
+    local timestamp=$(timestamp)
+    createTag ${worldName} ${timestamp}
+    local backupFile=${worldName}-${timestamp}
+    cd ${source}
+    tar -cvzf ${backupFile} ${worldName}.db ${worldName}.fwl
+    aws s3 cp ${source}/${backupFile} s3://${s3BucketName}/backup/${backupFile}
+
+}
+
+
+while getopts ":o:b:d:w:" opt; do
+  case ${opt} in
+    o)
+      OPTION=$OPTARG
+      ;;
+    w)
+      WORLD_NAME=$OPTARG
+      ;;
+    d)
+      DIR=$OPTARG
+      ;;
+    b)
+      S3BUCKET=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: $OPTARG"
+      usage
+      ;;
+    :)
+      echo "Invalid option: $OPTARG requires an argument"
+      usage
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+[[ -z "${OPTION}" ]] && usage
+
+case $OPTION in
+    restore)
+        restore
+    ;;
+    backup)
+        backup
+    ;;
+    *)
+        echo "Unknown option" $OPTION
+        usage
+    ;;
+esac

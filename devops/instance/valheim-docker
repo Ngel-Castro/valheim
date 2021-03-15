@@ -1,0 +1,154 @@
+#!/bin/bash
+
+# This script will be use to build image and start docker image.
+# Author Angel Castro Basurto
+
+#set -xe
+
+usage () {
+    cat << EOF 
+    Usage: $0 -o {build|run|boot}  -v {/my/volume/path} -n {image name} -t {image tag} -s {Server Name} -p {Password} -w {worldname} -f {Properties file}
+    ex: $0 -o build -t valheim:latest -s DanteServer -p "secret" -w "genesis"
+    ex: $0 -o build -f ./valheim.properties
+    ex: $0 -o run -f ./valheim.properties
+    ex: $0 -o run -t valheim:latest -n valheim -v /home/ec2-user/valheim-worlds
+    ex: $0 -o boot -f ./valheim.properties
+EOF
+    exit 1
+}
+
+
+checkVolume(){
+    local volume=$1
+    local force=$2
+    if [[ ! -d $volume ]]; then
+      echo "volumen not found"
+      if [[ $force == 1 ]]; then
+        echo "force creation"
+      fi
+    else
+      echo $volume "Found"
+    fi
+}
+
+buildDocker() {
+    
+
+    echo "Building image"
+    if [ -z "$FILE" ]; then
+
+      if [[ -z $SERVER_NAME || -z $WORLD_NAME || -z $PASSWORD || -z $TAG ]]; then
+        echo 'one or more variables are undefined'
+        echo "ex: $0 -o build -t valheim:latest -s \"DanteServer\" -p \"secret\" -w \"genesis\" "
+        exit 1
+      fi
+      cd ../docker/
+      docker system prune -f
+      docker build -t valheim:latest --build-arg A_SERVER_NAME=\"${SERVER_NAME}\" --build-arg A_WORLD_NAME=\"${WORLD_NAME}\" --build-arg A_PASSWORD=\"${PASSWORD}\" 
+
+    else
+      if [ -f "$FILE" ]; then
+        source $FILE
+        cd ../docker/
+        docker build -t ${imageTag}:${version} --build-arg A_SERVER_NAME=\"${serverName}\" --build-arg A_WORLD_NAME=\"${wolrdName}\" --build-arg A_PASSWORD=\"${password}\" .
+      else
+        echo "$FILE not found"
+        exit 40
+      fi
+    fi
+
+}
+
+runDocker(){
+    echo "running image"
+    if [ -z "$FILE" ]; then
+
+      if [[ -z $NAME || -z $VOLUME || -z $TAG ]]; then
+        echo 'one or more variables are undefined'
+        echo "$0 -o run -t valheim:latest -n valheim -v /home/ec2-user/valheim-worlds "
+        exit 1
+      fi
+      
+      checkVolume ${VOLUME} 1
+
+      docker run -d --name ${NAME} -v ${VOLUME}:/home/steam/.config/unity3d/IronGate/Valheim/worlds -p 2456:2456/udp -p 2456:2456/tcp ${TAG}
+
+    else
+      if [ -f "$FILE" ]; then
+        source $FILE
+        docker run -d --name ${containerName} -v ${worldLocation}:/home/steam/.config/unity3d/IronGate/Valheim/worlds -p ${dockerPort}:${dockerPort}/udp -p ${dockerPort}:${dockerPort}/tcp ${imageTag}:${version}
+      else
+        echo "$FILE not found"
+        exit 40
+      fi
+    fi
+}
+
+bootstrapping(){
+    if [ -f "$FILE" ]; then
+        CWD="$(pwd)"
+        buildDocker
+        echo "BUILD COMPLETED - "
+        cd ${CWD}
+        runDocker
+      else
+        echo "$FILE not found"
+        exit 40
+    fi
+}
+
+while getopts ":o:v:n:t:s:p:w:f:" opt; do
+  case ${opt} in
+    o)
+      OPTION=$OPTARG
+      ;;
+    v)
+      VOLUME=$OPTARG
+      ;;
+    n)
+      NAME=$OPTARG
+      ;;
+    t)
+      TAG=$OPTARG
+      ;;
+    s)
+      SERVER_NAME=$OPTARG
+      ;;
+    p)
+      PASSWORD=$OPTARG
+      ;;
+    w)
+      WORLD_NAME=$OPTARG
+      ;;
+    f)
+      FILE=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: $OPTARG"
+      usage
+      ;;
+    :)
+      echo "Invalid option: $OPTARG requires an argument"
+      usage
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+[[ -z "${OPTION}" ]] && usage
+
+case $OPTION in
+    build)
+        buildDocker
+    ;;
+    run)
+        runDocker
+    ;;
+    boot)
+        bootstrapping
+    ;;
+    *)
+        echo "Unknown option" $OPTION
+        usage
+    ;;
+esac
